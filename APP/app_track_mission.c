@@ -12,6 +12,8 @@ static int8_t s_candidate_direction;
 static uint32_t s_arc_duration_ms;
 static uint32_t s_exit_stable_ms;
 static uint32_t s_cooldown_ms;
+static uint32_t s_first_lap_pause_ms;
+static bool s_first_lap_pause_done;
 static bool s_stop_commanded;
 
 static int32_t Mission_Abs32(int32_t value)
@@ -92,6 +94,10 @@ static void Mission_SetState(AppTrackMission_State_t state)
         Mission_ResetCandidate();
     } else if (state == APP_TRACK_ARC_WAIT_EXIT) {
         s_exit_stable_ms = 0U;
+    } else if (state == APP_TRACK_FIRST_LAP_PAUSE) {
+        s_first_lap_pause_ms = 0U;
+        Mission_ResetCandidate();
+        Mission_ResetArc();
     } else if (state == APP_TRACK_COOLDOWN) {
         s_cooldown_ms = 0U;
         Mission_ResetCandidate();
@@ -247,7 +253,23 @@ static void Mission_UpdateArcExit(uint32_t dt_ms)
 
     if (g_track_mission.arc_count >= TRACK_MISSION_TARGET_ARCS) {
         Mission_SetState(APP_TRACK_STOPPED);
+    } else if (!s_first_lap_pause_done &&
+               (g_track_mission.arc_count >= TRACK_MISSION_FIRST_LAP_ARCS)) {
+        Mission_SetState(APP_TRACK_FIRST_LAP_PAUSE);
     } else {
+        Mission_SetState(APP_TRACK_COOLDOWN);
+    }
+}
+
+static void Mission_UpdateFirstLapPause(uint32_t dt_ms)
+{
+    if (s_first_lap_pause_ms < TRACK_MISSION_FIRST_LAP_PAUSE_MS) {
+        s_first_lap_pause_ms += dt_ms;
+    }
+
+    if (s_first_lap_pause_ms >= TRACK_MISSION_FIRST_LAP_PAUSE_MS) {
+        s_first_lap_pause_done = true;
+        PID_Clear_Motor(MAX_MOTOR);
         Mission_SetState(APP_TRACK_COOLDOWN);
     }
 }
@@ -272,6 +294,8 @@ void AppTrackMission_Init(void)
 {
     memset(&g_track_mission, 0, sizeof(g_track_mission));
     s_last_imu_ms = 0U;
+    s_first_lap_pause_ms = 0U;
+    s_first_lap_pause_done = false;
     s_stop_commanded = false;
     Mission_ResetCandidate();
     Mission_ResetArc();
@@ -306,6 +330,9 @@ void AppTrackMission_Update(void)
         case APP_TRACK_ARC_WAIT_EXIT:
             Mission_UpdateArcExit(dt_ms);
             break;
+        case APP_TRACK_FIRST_LAP_PAUSE:
+            Mission_UpdateFirstLapPause(dt_ms);
+            break;
         case APP_TRACK_COOLDOWN:
             Mission_UpdateCooldown(dt_ms);
             break;
@@ -318,6 +345,8 @@ void AppTrackMission_Update(void)
 
     if (g_track_mission.state == APP_TRACK_STOPPED) {
         Mission_StopOnce();
+    } else if (g_track_mission.state == APP_TRACK_FIRST_LAP_PAUSE) {
+        Motion_Stop(STOP_BRAKE);
     } else {
         LineWalking();
     }

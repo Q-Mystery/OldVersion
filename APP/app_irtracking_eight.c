@@ -1,5 +1,6 @@
 #include "AllHeader.h"
 #include "app_control_config.h"
+#include "app_track_mission.h"
 
 /* X1 is the logical left-most channel; 1 always means black line. */
 uint8_t X1, X2, X3, X4, X5, X6, X7, X8;
@@ -19,6 +20,7 @@ static uint8_t s_right_recovery_active;
 static uint8_t s_lost_reacquire_cycles;
 static int16_t s_fast_line_speed;
 static uint16_t s_fast_ramp_cycles;
+static uint16_t s_curve_slow_cycles;
 
 #define LINE_FAST_STABLE_CYCLES \
     ((uint16_t)((LINE_FAST_STABLE_MS + APP_MAIN_LOOP_DELAY_MS - 1U) / \
@@ -37,6 +39,9 @@ static uint16_t s_fast_ramp_cycles;
                 APP_MAIN_LOOP_DELAY_MS))
 #define LINE_FAST_AFTER_TURN_STABLE_CYCLES \
     ((uint16_t)((LINE_FAST_AFTER_TURN_STABLE_MS + APP_MAIN_LOOP_DELAY_MS - 1U) / \
+                APP_MAIN_LOOP_DELAY_MS))
+#define LINE_CURVE_SLOW_HOLD_CYCLES \
+    ((uint16_t)((LINE_CURVE_SLOW_HOLD_MS + APP_MAIN_LOOP_DELAY_MS - 1U) / \
                 APP_MAIN_LOOP_DELAY_MS))
 
 static int16_t Limit_Wheel_Speed(int16_t speed)
@@ -148,6 +153,56 @@ static int16_t APP_Line_Update_Fast_Ramp(void)
     }
 
     return s_fast_line_speed;
+}
+
+static int32_t APP_Line_Abs32(int32_t value)
+{
+    return (value < 0) ? -value : value;
+}
+
+static int16_t APP_Line_Limit_Delta(int16_t delta, int16_t limit)
+{
+    if (delta > limit) {
+        return limit;
+    }
+    if (delta < -limit) {
+        return (int16_t)(-limit);
+    }
+    return delta;
+}
+
+static uint8_t APP_Line_Mission_Curve_Seen(void)
+{
+    const AppTrackMission_Status_t *mission = AppTrackMission_GetStatus();
+
+    if (mission == NULL) {
+        return 0U;
+    }
+
+    if ((mission->state == APP_TRACK_ARC_TRACKING) ||
+        (mission->state == APP_TRACK_ARC_WAIT_EXIT)) {
+        return 1U;
+    }
+
+    if (mission->imu_available &&
+        (APP_Line_Abs32(mission->yaw_rate_filtered_x10) >=
+         LINE_CURVE_SLOW_GYRO_RATE_X10)) {
+        return 1U;
+    }
+
+    return 0U;
+}
+
+static void APP_Line_Arm_Curve_Slow(void)
+{
+    s_curve_slow_cycles = LINE_CURVE_SLOW_HOLD_CYCLES;
+    s_recent_turn_recovery = 1U;
+    APP_Line_Reset_Fast_Ramp();
+}
+
+static uint8_t APP_Line_Curve_Slow_Active(void)
+{
+    return (uint8_t)(s_curve_slow_cycles > 0U);
 }
 
 static int8_t APP_Line_Direction_From_Pair(uint8_t left_sensor,
@@ -269,6 +324,10 @@ void LineWalking(void)
     ReadEightIR(IR_Data_number);
     Copy_HD_Data();
 
+    if (s_curve_slow_cycles > 0U) {
+        s_curve_slow_cycles--;
+    }
+
     sensors[0] = X1;
     sensors[1] = X2;
     sensors[2] = X3;
@@ -285,6 +344,12 @@ void LineWalking(void)
     }
 
     error = APP_Line_Error_From_Sensors();
+
+    if ((X1 != 0U) || (X2 != 0U) || (X3 != 0U) ||
+        (X6 != 0U) || (X7 != 0U) || (X8 != 0U) ||
+        (APP_Line_Mission_Curve_Seen() != 0U)) {
+        APP_Line_Arm_Curve_Slow();
+    }
 
     if (active_count == 0U) {
         s_previous_error = 0;
@@ -344,10 +409,17 @@ void LineWalking(void)
         s_center_straight = 0U;
         s_center_stable_cycles = 0U;
         s_last_valid_error = error;
-        APP_Line_Set_Differential(turn_direction,
-                                  LINE_HARD_TURN_INNER_SPEED_MM_S,
-                                  LINE_HARD_TURN_OUTER_SPEED_MM_S,
-                                  trim);
+        if (APP_Line_Curve_Slow_Active() != 0U) {
+            APP_Line_Set_Differential(turn_direction,
+                                      LINE_CURVE_SLOW_HARD_INNER_SPEED_MM_S,
+                                      LINE_CURVE_SLOW_HARD_OUTER_SPEED_MM_S,
+                                      trim);
+        } else {
+            APP_Line_Set_Differential(turn_direction,
+                                      LINE_HARD_TURN_INNER_SPEED_MM_S,
+                                      LINE_HARD_TURN_OUTER_SPEED_MM_S,
+                                      trim);
+        }
         return;
     }
 
@@ -357,10 +429,17 @@ void LineWalking(void)
         s_center_straight = 0U;
         s_center_stable_cycles = 0U;
         s_last_valid_error = error;
-        APP_Line_Set_Differential(turn_direction,
-                                  LINE_MEDIUM_TURN_INNER_SPEED_MM_S,
-                                  LINE_MEDIUM_TURN_OUTER_SPEED_MM_S,
-                                  trim);
+        if (APP_Line_Curve_Slow_Active() != 0U) {
+            APP_Line_Set_Differential(turn_direction,
+                                      LINE_CURVE_SLOW_MEDIUM_INNER_SPEED_MM_S,
+                                      LINE_CURVE_SLOW_MEDIUM_OUTER_SPEED_MM_S,
+                                      trim);
+        } else {
+            APP_Line_Set_Differential(turn_direction,
+                                      LINE_MEDIUM_TURN_INNER_SPEED_MM_S,
+                                      LINE_MEDIUM_TURN_OUTER_SPEED_MM_S,
+                                      trim);
+        }
         return;
     }
 
@@ -383,7 +462,10 @@ void LineWalking(void)
         s_last_valid_error = error;
         APP_Line_Remember_Direction(APP_Line_Sign(error));
         pid_output_IRR = 0;
-        if (s_center_stable_cycles >= fast_stable_target) {
+        if (APP_Line_Curve_Slow_Active() != 0U) {
+            APP_Line_Reset_Fast_Ramp();
+            base_speed = LINE_CURVE_SLOW_SPEED_MM_S;
+        } else if (s_center_stable_cycles >= fast_stable_target) {
             s_recent_turn_recovery = 0U;
             base_speed = APP_Line_Update_Fast_Ramp();
         } else {
@@ -405,15 +487,29 @@ void LineWalking(void)
             turn_direction = APP_Line_Direction_From_Pair(0U, 0U, error);
         }
         if (s_turn_latch_hard != 0U) {
-            APP_Line_Set_Differential(turn_direction,
-                                      LINE_HARD_TURN_INNER_SPEED_MM_S,
-                                      LINE_HARD_TURN_OUTER_SPEED_MM_S,
-                                      trim);
+            if (APP_Line_Curve_Slow_Active() != 0U) {
+                APP_Line_Set_Differential(turn_direction,
+                                          LINE_CURVE_SLOW_HARD_INNER_SPEED_MM_S,
+                                          LINE_CURVE_SLOW_HARD_OUTER_SPEED_MM_S,
+                                          trim);
+            } else {
+                APP_Line_Set_Differential(turn_direction,
+                                          LINE_HARD_TURN_INNER_SPEED_MM_S,
+                                          LINE_HARD_TURN_OUTER_SPEED_MM_S,
+                                          trim);
+            }
         } else {
-            APP_Line_Set_Differential(turn_direction,
-                                      LINE_MEDIUM_TURN_INNER_SPEED_MM_S,
-                                      LINE_MEDIUM_TURN_OUTER_SPEED_MM_S,
-                                      trim);
+            if (APP_Line_Curve_Slow_Active() != 0U) {
+                APP_Line_Set_Differential(turn_direction,
+                                          LINE_CURVE_SLOW_MEDIUM_INNER_SPEED_MM_S,
+                                          LINE_CURVE_SLOW_MEDIUM_OUTER_SPEED_MM_S,
+                                          trim);
+            } else {
+                APP_Line_Set_Differential(turn_direction,
+                                          LINE_MEDIUM_TURN_INNER_SPEED_MM_S,
+                                          LINE_MEDIUM_TURN_OUTER_SPEED_MM_S,
+                                          trim);
+            }
         }
         APP_Line_Remember_Direction(turn_direction);
         return;
@@ -421,10 +517,17 @@ void LineWalking(void)
 
     if ((X3 != 0U) || (X6 != 0U)) {
         turn_direction = APP_Line_Direction_From_Pair(X3, X6, error);
-        APP_Line_Set_Differential(turn_direction,
-                                  LINE_SOFT_TURN_INNER_SPEED_MM_S,
-                                  LINE_SOFT_TURN_OUTER_SPEED_MM_S,
-                                  trim);
+        if (APP_Line_Curve_Slow_Active() != 0U) {
+            APP_Line_Set_Differential(turn_direction,
+                                      LINE_CURVE_SLOW_SOFT_INNER_SPEED_MM_S,
+                                      LINE_CURVE_SLOW_SOFT_OUTER_SPEED_MM_S,
+                                      trim);
+        } else {
+            APP_Line_Set_Differential(turn_direction,
+                                      LINE_SOFT_TURN_INNER_SPEED_MM_S,
+                                      LINE_SOFT_TURN_OUTER_SPEED_MM_S,
+                                      trim);
+        }
         APP_Line_Remember_Direction(turn_direction);
         return;
     }
@@ -436,8 +539,15 @@ void LineWalking(void)
      * steering command.
      */
     turn_delta = (int16_t)pid_output_IRR;
-    left_speed = Limit_Wheel_Speed((int16_t)(LINE_CORNER_SPEED_MM_S + turn_delta));
-    right_speed = Limit_Wheel_Speed((int16_t)(LINE_CORNER_SPEED_MM_S - turn_delta));
+    if (APP_Line_Curve_Slow_Active() != 0U) {
+        turn_delta = APP_Line_Limit_Delta(
+            turn_delta, LINE_CURVE_SLOW_MAX_TURN_DELTA_MM_S);
+        base_speed = LINE_CURVE_SLOW_SPEED_MM_S;
+    } else {
+        base_speed = LINE_CORNER_SPEED_MM_S;
+    }
+    left_speed = Limit_Wheel_Speed((int16_t)(base_speed + turn_delta));
+    right_speed = Limit_Wheel_Speed((int16_t)(base_speed - turn_delta));
     Motion_Set_Speed(left_speed, right_speed);
 }
 
