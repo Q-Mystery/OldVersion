@@ -89,11 +89,21 @@
  * Motor driver PWM.
  * MOTOR_PWM_MAX_DUTY must match the SysConfig PWM period. MOTOR_PWM_DEAD_ZONE
  * is added only after a non-zero PID output so the motor can overcome static
- * friction without making a zero command move the wheel.
+ * friction without making a zero command move the wheel. The average motor
+ * drive voltage target is converted to an effective PWM duty limit using the
+ * motor driver supply voltage.
  */
 #define MOTOR_PWM_MAX_DUTY                 (1000)
 #define MOTOR_PWM_COMPARE_INVERTED         (1U)
 #define MOTOR_PWM_DEAD_ZONE                (160)
+#define MOTOR_SUPPLY_MV                    (8400U)
+#define MOTOR_TARGET_MAX_AVERAGE_MV        (7200U)
+#define MOTOR_TARGET_EFFECTIVE_PWM_DUTY_RAW \
+    (((MOTOR_TARGET_MAX_AVERAGE_MV * MOTOR_PWM_MAX_DUTY) + \
+      (MOTOR_SUPPLY_MV / 2U)) / MOTOR_SUPPLY_MV)
+#define MOTOR_TARGET_EFFECTIVE_PWM_DUTY \
+    ((MOTOR_TARGET_EFFECTIVE_PWM_DUTY_RAW > MOTOR_PWM_MAX_DUTY) ? \
+        MOTOR_PWM_MAX_DUTY : MOTOR_TARGET_EFFECTIVE_PWM_DUTY_RAW)
 #define MOTOR_LEFT_PWM_CHANNEL_INDEX       GPIO_motor_PWM_C1_IDX
 #define MOTOR_RIGHT_PWM_CHANNEL_INDEX      GPIO_motor_PWM_C2_IDX
 
@@ -132,7 +142,10 @@
 #define MOTION_SPIN_SPEED_MULTIPLIER       (5)
 #define MOTION_YAW_RATE_SCALE              (1000.0f)
 #define MOTOR_TARGET_RAMP_STEP_MM_S        (10)
-#define MOTOR_PID_PWM_LIMIT                (260.0f)
+#define MOTOR_PID_PWM_LIMIT \
+    ((MOTOR_TARGET_EFFECTIVE_PWM_DUTY > MOTOR_PWM_DEAD_ZONE) ? \
+        ((float)(MOTOR_TARGET_EFFECTIVE_PWM_DUTY - MOTOR_PWM_DEAD_ZONE)) : \
+        0.0f)
 
 /*
  * Wheel speed PID. The same gains are applied to left and right wheels.
