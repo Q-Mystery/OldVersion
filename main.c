@@ -9,7 +9,7 @@
 
 int main(void)
 {
-    uint8_t display_divider = 0U;
+    uint16_t display_divider = 0U;
     bool obstacle_now = false;
     bool obstacle_last = false;
 

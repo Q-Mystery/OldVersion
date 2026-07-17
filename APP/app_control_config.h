@@ -9,7 +9,7 @@
 
 /* Main loop and display timing. */
 #define APP_MAIN_LOOP_DELAY_MS             (1U)
-#define APP_OLED_DISPLAY_DIVIDER           (250U)
+#define APP_OLED_DISPLAY_DIVIDER           (1000U)
 #define MOTOR_DIRECT_TEST_START_DELAY_MS   (3000U)
 
 /* Two-digit BCD 7-segment display digit select: PA0=tens, PA1=ones. */
@@ -61,7 +61,7 @@
 #define ULTRASONIC_CLEAR_DISTANCE_CM       (8U)
 #define ULTRASONIC_TRIGGER_PULSE_US        (10U)
 #define ULTRASONIC_ECHO_TIMEOUT_US         (6000U)
-#define ULTRASONIC_UPDATE_INTERVAL_MS      (60U)
+#define ULTRASONIC_UPDATE_INTERVAL_MS      (150U)
 #define ULTRASONIC_SIGNAL_PORT             (GPIOB)
 #define ULTRASONIC_SIGNAL_PB19_PIN         (DL_GPIO_PIN_19)
 #define ULTRASONIC_SIGNAL_PB19_IOMUX       (IOMUX_PINCM45)
@@ -156,20 +156,20 @@
  * active brake is disabled by default because an early brake pulse can make the
  * car appear unable to track; enable it only after encoder scale is verified.
  */
-#define MOTOR_MAX_FORWARD_SPEED_MM_S       (160)
+#define MOTOR_MAX_FORWARD_SPEED_MM_S       (240)
 #define MOTOR_OVERSPEED_BRAKE_ENABLE       (0U)
 #define MOTOR_MAX_PULSES_PER_20MS          (45)
 #define MOTION_COMMAND_LIMIT_MM_S          (1000)
 #define MOTION_PERCENT_SPEED_SCALE         (10U)
 #define MOTION_SPIN_SPEED_MULTIPLIER       (5)
 #define MOTION_YAW_RATE_SCALE              (1000.0f)
-#define MOTOR_TARGET_RAMP_STEP_MM_S        (10)
+#define MOTOR_TARGET_RAMP_STEP_MM_S        (25)
 #define MOTOR_PID_PWM_LIMIT \
     ((MOTOR_TARGET_EFFECTIVE_PWM_DUTY > MOTOR_PWM_DEAD_ZONE) ? \
         ((float)(MOTOR_TARGET_EFFECTIVE_PWM_DUTY - MOTOR_PWM_DEAD_ZONE)) : \
         0.0f)
-#define MOTOR_SPEED_FEEDFORWARD_PWM_PER_MM_S (4.20f)
-#define MOTOR_PID_CORRECTION_LIMIT         (120.0f)
+#define MOTOR_SPEED_FEEDFORWARD_PWM_PER_MM_S (4.80f)
+#define MOTOR_PID_CORRECTION_LIMIT         (220.0f)
 
 /*
  * Wheel speed PID. The same gains are applied to left and right wheels.
@@ -190,36 +190,38 @@
  * Keep both wheels moving while correcting. Only enter the fast straight mode
  * after the central probe window is stable for a short time.
  */
-#define LINE_TURN_KP                       (6.00f)
-#define LINE_TURN_KD                       (10.00f)
-#define LINE_BASE_SPEED_MM_S               (75)
-#define LINE_FAST_SPEED_MM_S               (110)
-#define LINE_CORNER_SPEED_MM_S             (80)
-#define LINE_HARD_CORNER_SPEED_MM_S        (70)
+#define LINE_TURN_KP                       (8.50f)
+#define LINE_TURN_KD                       (22.00f)
+#define LINE_BASE_SPEED_MM_S               (110)
+#define LINE_FAST_SPEED_MM_S               (190)
+#define LINE_MIDDLE_FAST_SPEED_MM_S        (165)
+#define LINE_MIDDLE_FAST_MAX_DELTA_MM_S    (70)
+#define LINE_CORNER_SPEED_MM_S             (145)
+#define LINE_HARD_CORNER_SPEED_MM_S        (130)
 #define LINE_CORRECTION_SPEED_MM_S         LINE_CORNER_SPEED_MM_S
 #define LINE_SEARCH_SPEED_MM_S             (5)
 #define LINE_MAX_WHEEL_SPEED_MM_S          MOTOR_MAX_FORWARD_SPEED_MM_S
 #define LINE_CENTER_DEADBAND               (1)
-#define LINE_MAX_TURN_DELTA_MM_S           (60)
-#define LINE_FAST_STABLE_MS                (80U)
-#define LINE_FAST_RAMP_STEP_MM_S           (10)
-#define LINE_FAST_RAMP_STEP_MS             (120U)
+#define LINE_MAX_TURN_DELTA_MM_S           (110)
+#define LINE_FAST_STABLE_MS                (20U)
+#define LINE_FAST_RAMP_STEP_MM_S           (25)
+#define LINE_FAST_RAMP_STEP_MS             (40U)
 #define LINE_TURN_LATCH_MS                 (80U)
-#define LINE_LOST_BRAKE_MS                 (60U)
-#define LINE_LOST_RECOVERY_MS              (560U)
-#define LINE_FAST_AFTER_TURN_STABLE_MS     (180U)
-#define LINE_SOFT_TURN_INNER_SPEED_MM_S    (40)
-#define LINE_SOFT_TURN_OUTER_SPEED_MM_S    (100)
-#define LINE_MEDIUM_TURN_INNER_SPEED_MM_S  (0)
-#define LINE_MEDIUM_TURN_OUTER_SPEED_MM_S  (85)
+#define LINE_LOST_BRAKE_MS                 (20U)
+#define LINE_LOST_RECOVERY_MS              (350U)
+#define LINE_FAST_AFTER_TURN_STABLE_MS     (60U)
+#define LINE_SOFT_TURN_INNER_SPEED_MM_S    (75)
+#define LINE_SOFT_TURN_OUTER_SPEED_MM_S    (180)
+#define LINE_MEDIUM_TURN_INNER_SPEED_MM_S  (15)
+#define LINE_MEDIUM_TURN_OUTER_SPEED_MM_S  (155)
 #define LINE_HARD_TURN_INNER_SPEED_MM_S    (0)
-#define LINE_HARD_TURN_OUTER_SPEED_MM_S    (70)
+#define LINE_HARD_TURN_OUTER_SPEED_MM_S    (130)
 #define LINE_LOST_RECOVERY_INNER_SPEED_MM_S (0)
-#define LINE_LOST_RECOVERY_OUTER_SPEED_MM_S (45)
+#define LINE_LOST_RECOVERY_OUTER_SPEED_MM_S (90)
 #define LINE_LOST_RIGHT_SEARCH_INNER_SPEED_MM_S (0)
-#define LINE_LOST_RIGHT_SEARCH_OUTER_SPEED_MM_S (40)
+#define LINE_LOST_RIGHT_SEARCH_OUTER_SPEED_MM_S (90)
 #define LINE_LOST_REACQUIRE_STABLE_CYCLES  (3U)
-#define LINE_PD_TRIM_DIVISOR               (4)
+#define LINE_PD_TRIM_DIVISOR               (2)
 #define LINE_LOST_FORWARD_CYCLES           (8U)
 #define LINE_TURN_INNER_SPEED_MM_S         (0)
 #define LINE_TURN_OUTER_SPEED_MM_S         LINE_MEDIUM_TURN_OUTER_SPEED_MM_S

@@ -120,6 +120,13 @@ static uint8_t APP_Line_Right_Reacquire_Seen(void)
     return (uint8_t)(X4 || X5 || X6 || X7 || X8);
 }
 
+static uint8_t APP_Line_Middle_Fast_Window_Active(void)
+{
+    return (uint8_t)((X1 == 0U) && (X8 == 0U) &&
+                     (X2 == 0U) && (X7 == 0U) &&
+                     (X3 || X4 || X5 || X6));
+}
+
 static void APP_Line_Reset_Fast_Ramp(void)
 {
     s_fast_line_speed = LINE_BASE_SPEED_MM_S;
@@ -391,6 +398,25 @@ void LineWalking(void)
             base_speed = LINE_BASE_SPEED_MM_S;
         }
         Motion_Set_Speed(base_speed, base_speed);
+        return;
+    }
+
+    if (APP_Line_Middle_Fast_Window_Active() != 0U) {
+        s_last_valid_error = error;
+        APP_Line_Remember_Direction(APP_Line_Sign(error));
+
+        turn_delta = (int16_t)pid_output_IRR;
+        if (turn_delta > LINE_MIDDLE_FAST_MAX_DELTA_MM_S) {
+            turn_delta = LINE_MIDDLE_FAST_MAX_DELTA_MM_S;
+        } else if (turn_delta < -LINE_MIDDLE_FAST_MAX_DELTA_MM_S) {
+            turn_delta = (int16_t)(-LINE_MIDDLE_FAST_MAX_DELTA_MM_S);
+        }
+
+        left_speed = Limit_Wheel_Speed((int16_t)(LINE_MIDDLE_FAST_SPEED_MM_S +
+                                                 turn_delta));
+        right_speed = Limit_Wheel_Speed((int16_t)(LINE_MIDDLE_FAST_SPEED_MM_S -
+                                                  turn_delta));
+        Motion_Set_Speed(left_speed, right_speed);
         return;
     }
 
