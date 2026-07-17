@@ -134,14 +134,14 @@
  * active brake is disabled by default because an early brake pulse can make the
  * car appear unable to track; enable it only after encoder scale is verified.
  */
-#define MOTOR_MAX_FORWARD_SPEED_MM_S       (220)
+#define MOTOR_MAX_FORWARD_SPEED_MM_S       (260)
 #define MOTOR_OVERSPEED_BRAKE_ENABLE       (0U)
 #define MOTOR_MAX_PULSES_PER_20MS          (45)
 #define MOTION_COMMAND_LIMIT_MM_S          (1000)
 #define MOTION_PERCENT_SPEED_SCALE         (10U)
 #define MOTION_SPIN_SPEED_MULTIPLIER       (5)
 #define MOTION_YAW_RATE_SCALE              (1000.0f)
-#define MOTOR_TARGET_RAMP_STEP_MM_S        (10)
+#define MOTOR_TARGET_RAMP_STEP_MM_S        (12)
 #define MOTOR_PID_PWM_LIMIT \
     ((MOTOR_TARGET_EFFECTIVE_PWM_DUTY > MOTOR_PWM_DEAD_ZONE) ? \
         ((float)(MOTOR_TARGET_EFFECTIVE_PWM_DUTY - MOTOR_PWM_DEAD_ZONE)) : \
@@ -152,8 +152,8 @@
  * Increase KP if speed response is too slow; increase KI only after the car can
  * already follow the line without large oscillation.
  */
-#define MOTOR_SPEED_PID_KP                 (0.35f)
-#define MOTOR_SPEED_PID_KI                 (0.008f)
+#define MOTOR_SPEED_PID_KP                 (0.30f)
+#define MOTOR_SPEED_PID_KI                 (0.010f)
 #define MOTOR_SPEED_PID_KD                 (0.00f)
 
 /* Optional yaw PID used by legacy IMU-assisted movement functions. */
