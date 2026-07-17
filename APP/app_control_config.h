@@ -97,7 +97,7 @@
 #define MOTOR_PWM_COMPARE_INVERTED         (1U)
 #define MOTOR_PWM_DEAD_ZONE                (160)
 #define MOTOR_SUPPLY_MV                    (8400U)
-#define MOTOR_TARGET_MAX_AVERAGE_MV        (7200U)
+#define MOTOR_TARGET_MAX_AVERAGE_MV        (7300U)
 #define MOTOR_TARGET_EFFECTIVE_PWM_DUTY_RAW \
     (((MOTOR_TARGET_MAX_AVERAGE_MV * MOTOR_PWM_MAX_DUTY) + \
       (MOTOR_SUPPLY_MV / 2U)) / MOTOR_SUPPLY_MV)
@@ -163,18 +163,21 @@
 
 /*
  * Black-line tracking for an oval/track-field style course.
- * X4 or X5 alone means "good enough, go straight". If a side probe is active
- * at the same time, apply a small differential early and keep moving slowly.
+ * All eight probes produce a weighted line error. Straight, medium, and hard
+ * bases are selected from error magnitude, then a continuous PD delta is added
+ * to one wheel and subtracted from the other.
  */
-#define LINE_TURN_KP                       (1.20f)
-#define LINE_TURN_KD                       (0.00f)
-#define LINE_BASE_SPEED_MM_S               (130)
-#define LINE_CORRECTION_SPEED_MM_S         (95)
-#define LINE_SEARCH_SPEED_MM_S             (16)
+#define LINE_TURN_KP                       (18.0f)
+#define LINE_TURN_KD                       (6.0f)
+#define LINE_BASE_SPEED_MM_S               (185)
+#define LINE_CORRECTION_SPEED_MM_S         (145)
+#define LINE_HARD_BASE_SPEED_MM_S          (95)
+#define LINE_SEARCH_SPEED_MM_S             (20)
 #define LINE_MAX_WHEEL_SPEED_MM_S          MOTOR_MAX_FORWARD_SPEED_MM_S
 #define LINE_CENTER_DEADBAND               (1)
-#define LINE_MAX_TURN_DELTA_MM_S           (8)
-#define LINE_LOST_FORWARD_CYCLES           (20U)
+#define LINE_MAX_TURN_DELTA_MM_S           (125)
+#define LINE_LOST_FORWARD_CYCLES           (18U)
+#define LINE_MIN_CORRECTION_SPEED_MM_S     (20)
 #define LINE_TURN_INNER_SPEED_MM_S         (0)
 #define LINE_SOFT_TURN_INNER_SPEED_MM_S    (85)
 #define LINE_SOFT_TURN_OUTER_SPEED_MM_S    (130)
