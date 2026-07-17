@@ -4,6 +4,7 @@
 
 static AppTrackMission_Status_t g_track_mission;
 static uint32_t s_last_imu_ms;
+static uint32_t s_last_mission_ms;
 static uint32_t s_candidate_window_ms;
 static int32_t s_candidate_positive_angle_x10;
 static int32_t s_candidate_negative_angle_x10;
@@ -59,6 +60,19 @@ static int8_t Mission_Sign(int32_t value)
         return -1;
     }
     return 0;
+}
+
+static bool Mission_CurveSensorSeen(void)
+{
+    return (X1 != 0U) || (X2 != 0U) || (X3 != 0U) ||
+           (X6 != 0U) || (X7 != 0U) || (X8 != 0U);
+}
+
+static bool Mission_CenterStableSeen(void)
+{
+    return ((X4 != 0U) || (X5 != 0U)) &&
+           (X1 == 0U) && (X2 == 0U) && (X3 == 0U) &&
+           (X6 == 0U) && (X7 == 0U) && (X8 == 0U);
 }
 
 static void Mission_ResetCandidate(void)
@@ -152,6 +166,7 @@ static void Mission_UpdateWaitCurve(uint32_t dt_ms)
 {
     int32_t rate = g_track_mission.yaw_rate_filtered_x10;
     int32_t abs_rate = Mission_Abs32(rate);
+    bool curve_seen = Mission_CurveSensorSeen();
     int32_t delta_x10;
     int32_t main_angle_x10;
     int32_t counter_angle_x10;
@@ -159,8 +174,12 @@ static void Mission_UpdateWaitCurve(uint32_t dt_ms)
     int32_t net_angle_x10;
     int8_t sign;
 
-    if (abs_rate < TRACK_MISSION_ENTER_RATE_X10) {
+    if (!curve_seen && (abs_rate < TRACK_MISSION_ENTER_RATE_X10)) {
         Mission_ResetCandidate();
+        return;
+    }
+
+    if (abs_rate < TRACK_MISSION_GYRO_DEADBAND_X10) {
         return;
     }
 
@@ -203,7 +222,8 @@ static void Mission_UpdateWaitCurve(uint32_t dt_ms)
     total_angle_x10 = main_angle_x10 + counter_angle_x10;
     net_angle_x10 = main_angle_x10 - counter_angle_x10;
 
-    if ((total_angle_x10 > 0) &&
+    if (((curve_seen != false) || (abs_rate >= TRACK_MISSION_ENTER_RATE_X10)) &&
+        (total_angle_x10 > 0) &&
         ((main_angle_x10 * TRACK_MISSION_ENTER_SIGN_DEN) >=
          (total_angle_x10 * TRACK_MISSION_ENTER_SIGN_NUM)) &&
         (net_angle_x10 >= TRACK_MISSION_ENTER_NET_ANGLE_X10)) {
@@ -237,7 +257,8 @@ static void Mission_UpdateArcExit(uint32_t dt_ms)
 {
     int32_t abs_rate = Mission_Abs32(g_track_mission.yaw_rate_filtered_x10);
 
-    if (abs_rate <= TRACK_MISSION_ARC_EXIT_RATE_X10) {
+    if ((abs_rate <= TRACK_MISSION_ARC_EXIT_RATE_X10) &&
+        (Mission_CenterStableSeen() != false)) {
         s_exit_stable_ms += dt_ms;
     } else {
         s_exit_stable_ms = 0U;
@@ -294,6 +315,7 @@ void AppTrackMission_Init(void)
 {
     memset(&g_track_mission, 0, sizeof(g_track_mission));
     s_last_imu_ms = 0U;
+    s_last_mission_ms = Timer_Get_Runtime_Ms();
     s_first_lap_pause_ms = 0U;
     s_first_lap_pause_done = false;
     s_stop_commanded = false;
@@ -304,8 +326,9 @@ void AppTrackMission_Init(void)
 
 void AppTrackMission_Update(void)
 {
+    uint32_t now_ms;
     uint32_t dt_ms = 0U;
-    bool new_imu_sample;
+    uint32_t imu_dt_ms = 0U;
 
     if (Mission_EncoderStopReached()) {
         Mission_SetState(APP_TRACK_STOPPED);
@@ -316,8 +339,15 @@ void AppTrackMission_Update(void)
         return;
     }
 
-    new_imu_sample = Mission_UpdateImu(&dt_ms);
-    if (new_imu_sample) {
+    (void)Mission_UpdateImu(&imu_dt_ms);
+
+    now_ms = Timer_Get_Runtime_Ms();
+    if (s_last_mission_ms == 0U) {
+        s_last_mission_ms = now_ms;
+    }
+    dt_ms = (uint32_t)(now_ms - s_last_mission_ms);
+    if (dt_ms > 0U) {
+        s_last_mission_ms = now_ms;
         g_track_mission.state_elapsed_ms += dt_ms;
 
         switch (g_track_mission.state) {

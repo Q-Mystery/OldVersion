@@ -22,6 +22,12 @@ static int16_t s_fast_line_speed;
 static uint16_t s_fast_ramp_cycles;
 static uint16_t s_curve_slow_cycles;
 
+static void APP_Line_Set_Differential_Capped(int8_t direction,
+                                             int16_t inner_speed,
+                                             int16_t outer_speed,
+                                             int16_t trim,
+                                             int16_t max_speed);
+
 #define LINE_FAST_STABLE_CYCLES \
     ((uint16_t)((LINE_FAST_STABLE_MS + APP_MAIN_LOOP_DELAY_MS - 1U) / \
                 APP_MAIN_LOOP_DELAY_MS))
@@ -44,15 +50,20 @@ static uint16_t s_curve_slow_cycles;
     ((uint16_t)((LINE_CURVE_SLOW_HOLD_MS + APP_MAIN_LOOP_DELAY_MS - 1U) / \
                 APP_MAIN_LOOP_DELAY_MS))
 
-static int16_t Limit_Wheel_Speed(int16_t speed)
+static int16_t Limit_Wheel_Speed_To(int16_t speed, int16_t max_speed)
 {
     if (speed < 0) {
         return 0;
     }
-    if (speed > LINE_MAX_WHEEL_SPEED_MM_S) {
-        return LINE_MAX_WHEEL_SPEED_MM_S;
+    if (speed > max_speed) {
+        return max_speed;
     }
     return speed;
+}
+
+static int16_t Limit_Wheel_Speed(int16_t speed)
+{
+    return Limit_Wheel_Speed_To(speed, LINE_MAX_WHEEL_SPEED_MM_S);
 }
 
 static int8_t APP_Line_Error_From_Sensors(void)
@@ -155,11 +166,6 @@ static int16_t APP_Line_Update_Fast_Ramp(void)
     return s_fast_line_speed;
 }
 
-static int32_t APP_Line_Abs32(int32_t value)
-{
-    return (value < 0) ? -value : value;
-}
-
 static int16_t APP_Line_Limit_Delta(int16_t delta, int16_t limit)
 {
     if (delta > limit) {
@@ -181,12 +187,6 @@ static uint8_t APP_Line_Mission_Curve_Seen(void)
 
     if ((mission->state == APP_TRACK_ARC_TRACKING) ||
         (mission->state == APP_TRACK_ARC_WAIT_EXIT)) {
-        return 1U;
-    }
-
-    if (mission->imu_available &&
-        (APP_Line_Abs32(mission->yaw_rate_filtered_x10) >=
-         LINE_CURVE_SLOW_GYRO_RATE_X10)) {
         return 1U;
     }
 
@@ -235,6 +235,16 @@ static void APP_Line_Set_Differential(int8_t direction,
                                       int16_t outer_speed,
                                       int16_t trim)
 {
+    APP_Line_Set_Differential_Capped(direction, inner_speed, outer_speed, trim,
+                                     LINE_MAX_WHEEL_SPEED_MM_S);
+}
+
+static void APP_Line_Set_Differential_Capped(int8_t direction,
+                                             int16_t inner_speed,
+                                             int16_t outer_speed,
+                                             int16_t trim,
+                                             int16_t max_speed)
+{
     int16_t left_speed;
     int16_t right_speed;
 
@@ -249,8 +259,8 @@ static void APP_Line_Set_Differential(int8_t direction,
         right_speed = LINE_BASE_SPEED_MM_S;
     }
 
-    Motion_Set_Speed(Limit_Wheel_Speed(left_speed),
-                     Limit_Wheel_Speed(right_speed));
+    Motion_Set_Speed(Limit_Wheel_Speed_To(left_speed, max_speed),
+                     Limit_Wheel_Speed_To(right_speed, max_speed));
 }
 
 float APP_HD_PID_Calc(int8_t actual_value)
@@ -410,10 +420,11 @@ void LineWalking(void)
         s_center_stable_cycles = 0U;
         s_last_valid_error = error;
         if (APP_Line_Curve_Slow_Active() != 0U) {
-            APP_Line_Set_Differential(turn_direction,
-                                      LINE_CURVE_SLOW_HARD_INNER_SPEED_MM_S,
-                                      LINE_CURVE_SLOW_HARD_OUTER_SPEED_MM_S,
-                                      trim);
+            APP_Line_Set_Differential_Capped(
+                turn_direction,
+                LINE_CURVE_SLOW_HARD_INNER_SPEED_MM_S,
+                LINE_CURVE_SLOW_HARD_OUTER_SPEED_MM_S,
+                trim, LINE_CURVE_MAX_SPEED_MM_S);
         } else {
             APP_Line_Set_Differential(turn_direction,
                                       LINE_HARD_TURN_INNER_SPEED_MM_S,
@@ -430,10 +441,11 @@ void LineWalking(void)
         s_center_stable_cycles = 0U;
         s_last_valid_error = error;
         if (APP_Line_Curve_Slow_Active() != 0U) {
-            APP_Line_Set_Differential(turn_direction,
-                                      LINE_CURVE_SLOW_MEDIUM_INNER_SPEED_MM_S,
-                                      LINE_CURVE_SLOW_MEDIUM_OUTER_SPEED_MM_S,
-                                      trim);
+            APP_Line_Set_Differential_Capped(
+                turn_direction,
+                LINE_CURVE_SLOW_MEDIUM_INNER_SPEED_MM_S,
+                LINE_CURVE_SLOW_MEDIUM_OUTER_SPEED_MM_S,
+                trim, LINE_CURVE_MAX_SPEED_MM_S);
         } else {
             APP_Line_Set_Differential(turn_direction,
                                       LINE_MEDIUM_TURN_INNER_SPEED_MM_S,
@@ -488,10 +500,11 @@ void LineWalking(void)
         }
         if (s_turn_latch_hard != 0U) {
             if (APP_Line_Curve_Slow_Active() != 0U) {
-                APP_Line_Set_Differential(turn_direction,
-                                          LINE_CURVE_SLOW_HARD_INNER_SPEED_MM_S,
-                                          LINE_CURVE_SLOW_HARD_OUTER_SPEED_MM_S,
-                                          trim);
+                APP_Line_Set_Differential_Capped(
+                    turn_direction,
+                    LINE_CURVE_SLOW_HARD_INNER_SPEED_MM_S,
+                    LINE_CURVE_SLOW_HARD_OUTER_SPEED_MM_S,
+                    trim, LINE_CURVE_MAX_SPEED_MM_S);
             } else {
                 APP_Line_Set_Differential(turn_direction,
                                           LINE_HARD_TURN_INNER_SPEED_MM_S,
@@ -500,10 +513,11 @@ void LineWalking(void)
             }
         } else {
             if (APP_Line_Curve_Slow_Active() != 0U) {
-                APP_Line_Set_Differential(turn_direction,
-                                          LINE_CURVE_SLOW_MEDIUM_INNER_SPEED_MM_S,
-                                          LINE_CURVE_SLOW_MEDIUM_OUTER_SPEED_MM_S,
-                                          trim);
+                APP_Line_Set_Differential_Capped(
+                    turn_direction,
+                    LINE_CURVE_SLOW_MEDIUM_INNER_SPEED_MM_S,
+                    LINE_CURVE_SLOW_MEDIUM_OUTER_SPEED_MM_S,
+                    trim, LINE_CURVE_MAX_SPEED_MM_S);
             } else {
                 APP_Line_Set_Differential(turn_direction,
                                           LINE_MEDIUM_TURN_INNER_SPEED_MM_S,
@@ -518,10 +532,11 @@ void LineWalking(void)
     if ((X3 != 0U) || (X6 != 0U)) {
         turn_direction = APP_Line_Direction_From_Pair(X3, X6, error);
         if (APP_Line_Curve_Slow_Active() != 0U) {
-            APP_Line_Set_Differential(turn_direction,
-                                      LINE_CURVE_SLOW_SOFT_INNER_SPEED_MM_S,
-                                      LINE_CURVE_SLOW_SOFT_OUTER_SPEED_MM_S,
-                                      trim);
+            APP_Line_Set_Differential_Capped(
+                turn_direction,
+                LINE_CURVE_SLOW_SOFT_INNER_SPEED_MM_S,
+                LINE_CURVE_SLOW_SOFT_OUTER_SPEED_MM_S,
+                trim, LINE_CURVE_MAX_SPEED_MM_S);
         } else {
             APP_Line_Set_Differential(turn_direction,
                                       LINE_SOFT_TURN_INNER_SPEED_MM_S,
@@ -543,11 +558,15 @@ void LineWalking(void)
         turn_delta = APP_Line_Limit_Delta(
             turn_delta, LINE_CURVE_SLOW_MAX_TURN_DELTA_MM_S);
         base_speed = LINE_CURVE_SLOW_SPEED_MM_S;
+        left_speed = Limit_Wheel_Speed_To(
+            (int16_t)(base_speed + turn_delta), LINE_CURVE_MAX_SPEED_MM_S);
+        right_speed = Limit_Wheel_Speed_To(
+            (int16_t)(base_speed - turn_delta), LINE_CURVE_MAX_SPEED_MM_S);
     } else {
         base_speed = LINE_CORNER_SPEED_MM_S;
+        left_speed = Limit_Wheel_Speed((int16_t)(base_speed + turn_delta));
+        right_speed = Limit_Wheel_Speed((int16_t)(base_speed - turn_delta));
     }
-    left_speed = Limit_Wheel_Speed((int16_t)(base_speed + turn_delta));
-    right_speed = Limit_Wheel_Speed((int16_t)(base_speed - turn_delta));
     Motion_Set_Speed(left_speed, right_speed);
 }
 
