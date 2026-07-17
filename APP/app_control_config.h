@@ -12,9 +12,6 @@
 #define APP_OLED_DISPLAY_DIVIDER           (250U)
 #define MOTOR_DIRECT_TEST_START_DELAY_MS   (3000U)
 
-/* Two-digit BCD 7-segment display digit select: PA0=tens, PA1=ones. */
-#define BCD_DIGIT_SELECT_ACTIVE_HIGH       (1U)
-
 /*
  * MPU6050 uses an independent software I2C bus.
  * OLED wiring stays on SCL = PA8, SDA = PA22. MPU6050 wiring is independent:
@@ -89,21 +86,11 @@
  * Motor driver PWM.
  * MOTOR_PWM_MAX_DUTY must match the SysConfig PWM period. MOTOR_PWM_DEAD_ZONE
  * is added only after a non-zero PID output so the motor can overcome static
- * friction without making a zero command move the wheel. The average motor
- * drive voltage target is converted to an effective PWM duty limit using the
- * motor driver supply voltage.
+ * friction without making a zero command move the wheel.
  */
 #define MOTOR_PWM_MAX_DUTY                 (1000)
 #define MOTOR_PWM_COMPARE_INVERTED         (1U)
 #define MOTOR_PWM_DEAD_ZONE                (160)
-#define MOTOR_SUPPLY_MV                    (8400U)
-#define MOTOR_TARGET_MAX_AVERAGE_MV        (7300U)
-#define MOTOR_TARGET_EFFECTIVE_PWM_DUTY_RAW \
-    (((MOTOR_TARGET_MAX_AVERAGE_MV * MOTOR_PWM_MAX_DUTY) + \
-      (MOTOR_SUPPLY_MV / 2U)) / MOTOR_SUPPLY_MV)
-#define MOTOR_TARGET_EFFECTIVE_PWM_DUTY \
-    ((MOTOR_TARGET_EFFECTIVE_PWM_DUTY_RAW > MOTOR_PWM_MAX_DUTY) ? \
-        MOTOR_PWM_MAX_DUTY : MOTOR_TARGET_EFFECTIVE_PWM_DUTY_RAW)
 #define MOTOR_LEFT_PWM_CHANNEL_INDEX       GPIO_motor_PWM_C1_IDX
 #define MOTOR_RIGHT_PWM_CHANNEL_INDEX      GPIO_motor_PWM_C2_IDX
 
@@ -134,26 +121,23 @@
  * active brake is disabled by default because an early brake pulse can make the
  * car appear unable to track; enable it only after encoder scale is verified.
  */
-#define MOTOR_MAX_FORWARD_SPEED_MM_S       (260)
+#define MOTOR_MAX_FORWARD_SPEED_MM_S       (220)
 #define MOTOR_OVERSPEED_BRAKE_ENABLE       (0U)
 #define MOTOR_MAX_PULSES_PER_20MS          (45)
 #define MOTION_COMMAND_LIMIT_MM_S          (1000)
 #define MOTION_PERCENT_SPEED_SCALE         (10U)
 #define MOTION_SPIN_SPEED_MULTIPLIER       (5)
 #define MOTION_YAW_RATE_SCALE              (1000.0f)
-#define MOTOR_TARGET_RAMP_STEP_MM_S        (12)
-#define MOTOR_PID_PWM_LIMIT \
-    ((MOTOR_TARGET_EFFECTIVE_PWM_DUTY > MOTOR_PWM_DEAD_ZONE) ? \
-        ((float)(MOTOR_TARGET_EFFECTIVE_PWM_DUTY - MOTOR_PWM_DEAD_ZONE)) : \
-        0.0f)
+#define MOTOR_TARGET_RAMP_STEP_MM_S        (10)
+#define MOTOR_PID_PWM_LIMIT                (260.0f)
 
 /*
  * Wheel speed PID. The same gains are applied to left and right wheels.
  * Increase KP if speed response is too slow; increase KI only after the car can
  * already follow the line without large oscillation.
  */
-#define MOTOR_SPEED_PID_KP                 (0.30f)
-#define MOTOR_SPEED_PID_KI                 (0.010f)
+#define MOTOR_SPEED_PID_KP                 (0.35f)
+#define MOTOR_SPEED_PID_KI                 (0.008f)
 #define MOTOR_SPEED_PID_KD                 (0.00f)
 
 /* Optional yaw PID used by legacy IMU-assisted movement functions. */
@@ -163,21 +147,18 @@
 
 /*
  * Black-line tracking for an oval/track-field style course.
- * All eight probes produce a weighted line error. Straight, medium, and hard
- * bases are selected from error magnitude, then a continuous PD delta is added
- * to one wheel and subtracted from the other.
+ * X4 or X5 alone means "good enough, go straight". If a side probe is active
+ * at the same time, apply a small differential early and keep moving slowly.
  */
-#define LINE_TURN_KP                       (18.0f)
-#define LINE_TURN_KD                       (6.0f)
-#define LINE_BASE_SPEED_MM_S               (185)
-#define LINE_CORRECTION_SPEED_MM_S         (145)
-#define LINE_HARD_BASE_SPEED_MM_S          (95)
-#define LINE_SEARCH_SPEED_MM_S             (20)
+#define LINE_TURN_KP                       (1.20f)
+#define LINE_TURN_KD                       (0.00f)
+#define LINE_BASE_SPEED_MM_S               (130)
+#define LINE_CORRECTION_SPEED_MM_S         (95)
+#define LINE_SEARCH_SPEED_MM_S             (16)
 #define LINE_MAX_WHEEL_SPEED_MM_S          MOTOR_MAX_FORWARD_SPEED_MM_S
 #define LINE_CENTER_DEADBAND               (1)
-#define LINE_MAX_TURN_DELTA_MM_S           (125)
-#define LINE_LOST_FORWARD_CYCLES           (18U)
-#define LINE_MIN_CORRECTION_SPEED_MM_S     (20)
+#define LINE_MAX_TURN_DELTA_MM_S           (8)
+#define LINE_LOST_FORWARD_CYCLES           (20U)
 #define LINE_TURN_INNER_SPEED_MM_S         (0)
 #define LINE_SOFT_TURN_INNER_SPEED_MM_S    (85)
 #define LINE_SOFT_TURN_OUTER_SPEED_MM_S    (130)
@@ -197,20 +178,5 @@
 #define LINE_SCORE_X6                      (2U)
 #define LINE_SCORE_X7                      (3U)
 #define LINE_SCORE_X8                      (4U)
-
-/*
- * A-B-C-D two-lap oval mission.
- * The car still follows the black line with the eight-channel grayscale
- * sensors. Encoders provide lap distance and the MPU6050 Z gyro confirms the
- * two 180-degree arcs. Wheel diameter is 48 mm, so MECANUM_CIRCLE_MM already
- * matches pi * 48.
- */
-#define TRACK_MISSION_TARGET_LAPS          (2U)
-#define TRACK_MISSION_STRAIGHT_MM          (2000U)
-#define TRACK_MISSION_ARC_LENGTH_MM        (1885U)
-#define TRACK_MISSION_STRAIGHT_CURVE_GATE_MM (1900U)
-#define TRACK_MISSION_DISTANCE_MARGIN_MM   (180U)
-#define TRACK_MISSION_ARC_YAW_CONFIRM_X10  (1500)
-#define TRACK_MISSION_YAW_RATE_GATE_X10    (80)
 
 #endif
