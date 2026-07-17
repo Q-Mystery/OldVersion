@@ -1,5 +1,6 @@
 #include "AllHeader.h"
 #include "app_control_config.h"
+#include "app_track_mission.h"
 
 /* X1 is the logical left-most channel; 1 always means black line. */
 uint8_t X1, X2, X3, X4, X5, X6, X7, X8;
@@ -19,6 +20,7 @@ static uint8_t s_right_recovery_active;
 static uint8_t s_lost_reacquire_cycles;
 static int16_t s_fast_line_speed;
 static uint16_t s_fast_ramp_cycles;
+static uint16_t s_curve_exit_lockout_cycles;
 
 #define LINE_FAST_STABLE_CYCLES \
     ((uint16_t)((LINE_FAST_STABLE_MS + APP_MAIN_LOOP_DELAY_MS - 1U) / \
@@ -37,6 +39,9 @@ static uint16_t s_fast_ramp_cycles;
                 APP_MAIN_LOOP_DELAY_MS))
 #define LINE_FAST_AFTER_TURN_STABLE_CYCLES \
     ((uint16_t)((LINE_FAST_AFTER_TURN_STABLE_MS + APP_MAIN_LOOP_DELAY_MS - 1U) / \
+                APP_MAIN_LOOP_DELAY_MS))
+#define LINE_CURVE_EXIT_LOCKOUT_CYCLES \
+    ((uint16_t)((LINE_CURVE_EXIT_LOCKOUT_MS + APP_MAIN_LOOP_DELAY_MS - 1U) / \
                 APP_MAIN_LOOP_DELAY_MS))
 
 static int16_t Limit_Wheel_Speed(int16_t speed)
@@ -148,6 +153,30 @@ static int16_t APP_Line_Update_Fast_Ramp(void)
     }
 
     return s_fast_line_speed;
+}
+
+static int32_t APP_Line_Abs32(int32_t value)
+{
+    return (value < 0) ? -value : value;
+}
+
+static uint8_t APP_Line_Gyro_Approach_Seen(void)
+{
+    const AppTrackMission_Status_t *mission = AppTrackMission_GetStatus();
+
+    if ((mission == NULL) || !mission->imu_available) {
+        return 0U;
+    }
+
+    return (uint8_t)(APP_Line_Abs32(mission->yaw_rate_filtered_x10) >=
+                     LINE_GYRO_APPROACH_RATE_X10);
+}
+
+static void APP_Line_Mark_Curve_Context(void)
+{
+    s_recent_turn_recovery = 1U;
+    s_curve_exit_lockout_cycles = LINE_CURVE_EXIT_LOCKOUT_CYCLES;
+    APP_Line_Reset_Fast_Ramp();
 }
 
 static int8_t APP_Line_Direction_From_Pair(uint8_t left_sensor,
@@ -269,6 +298,10 @@ void LineWalking(void)
     ReadEightIR(IR_Data_number);
     Copy_HD_Data();
 
+    if (s_curve_exit_lockout_cycles > 0U) {
+        s_curve_exit_lockout_cycles--;
+    }
+
     sensors[0] = X1;
     sensors[1] = X2;
     sensors[2] = X3;
@@ -291,6 +324,7 @@ void LineWalking(void)
         s_center_stable_cycles = 0U;
         s_center_straight = 0U;
         pid_output_IRR = 0;
+        APP_Line_Mark_Curve_Context();
         s_right_recovery_active = 1U;
         s_lost_reacquire_cycles = 0U;
         s_turn_latch_direction = 1;
@@ -341,6 +375,7 @@ void LineWalking(void)
     if ((X1 != 0U) || (X8 != 0U)) {
         turn_direction = APP_Line_Direction_From_Pair(X1, X8, error);
         APP_Line_Arm_Turn_Latch(turn_direction, 1U);
+        APP_Line_Mark_Curve_Context();
         s_center_straight = 0U;
         s_center_stable_cycles = 0U;
         s_last_valid_error = error;
@@ -354,6 +389,7 @@ void LineWalking(void)
     if ((X2 != 0U) || (X7 != 0U)) {
         turn_direction = APP_Line_Direction_From_Pair(X2, X7, error);
         APP_Line_Arm_Turn_Latch(turn_direction, 0U);
+        APP_Line_Mark_Curve_Context();
         s_center_straight = 0U;
         s_center_stable_cycles = 0U;
         s_last_valid_error = error;
@@ -367,6 +403,9 @@ void LineWalking(void)
     if ((error >= -LINE_CENTER_DEADBAND) &&
         (error <= LINE_CENTER_DEADBAND) &&
         (APP_Line_Center_Window_Stable(error, active_count) != 0U)) {
+        if (APP_Line_Gyro_Approach_Seen() != 0U) {
+            APP_Line_Mark_Curve_Context();
+        }
         APP_Line_Clear_Turn_Latch();
         if (s_center_straight == 0U) {
             /* Remove differential PID history left by the preceding turn. */
@@ -383,7 +422,10 @@ void LineWalking(void)
         s_last_valid_error = error;
         APP_Line_Remember_Direction(APP_Line_Sign(error));
         pid_output_IRR = 0;
-        if (s_center_stable_cycles >= fast_stable_target) {
+        if (s_curve_exit_lockout_cycles > 0U) {
+            APP_Line_Reset_Fast_Ramp();
+            base_speed = LINE_CURVE_APPROACH_SPEED_MM_S;
+        } else if (s_center_stable_cycles >= fast_stable_target) {
             s_recent_turn_recovery = 0U;
             base_speed = APP_Line_Update_Fast_Ramp();
         } else {
@@ -421,6 +463,7 @@ void LineWalking(void)
 
     if ((X3 != 0U) || (X6 != 0U)) {
         turn_direction = APP_Line_Direction_From_Pair(X3, X6, error);
+        APP_Line_Mark_Curve_Context();
         APP_Line_Set_Differential(turn_direction,
                                   LINE_SOFT_TURN_INNER_SPEED_MM_S,
                                   LINE_SOFT_TURN_OUTER_SPEED_MM_S,
